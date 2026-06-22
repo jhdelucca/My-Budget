@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../db/database');
+const { query } = require('../db/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'mybudget_dev_secret';
 const TOKEN_EXPIRES = '7d';
@@ -10,7 +10,7 @@ function gerarToken(usuario) {
 }
 
 // POST /api/auth/register
-exports.register = (req, res) => {
+exports.register = async (req, res) => {
   const { nome, email, senha } = req.body;
 
   if (!nome || !email || !senha) {
@@ -20,29 +20,31 @@ exports.register = (req, res) => {
     return res.status(400).json({ error: 'A senha deve ter ao menos 4 caracteres.' });
   }
 
-  const jaExiste = db.prepare('SELECT id FROM Usuario WHERE email = ?').get(email);
-  if (jaExiste) {
+  const existe = await query('SELECT id FROM usuario WHERE email = $1', [email]);
+  if (existe.rows.length) {
     return res.status(409).json({ error: 'Este e-mail já está cadastrado.' });
   }
 
   const hash = bcrypt.hashSync(String(senha), 10);
-  const info = db
-    .prepare('INSERT INTO Usuario (nome, email, senha) VALUES (?, ?, ?)')
-    .run(nome, email, hash);
+  const { rows } = await query(
+    'INSERT INTO usuario (nome, email, senha) VALUES ($1, $2, $3) RETURNING id',
+    [nome, email, hash]
+  );
 
-  const usuario = { id: info.lastInsertRowid, nome, email };
+  const usuario = { id: rows[0].id, nome, email };
   return res.status(201).json({ token: gerarToken(usuario), usuario });
 };
 
 // POST /api/auth/login
-exports.login = (req, res) => {
+exports.login = async (req, res) => {
   const { email, senha } = req.body;
 
   if (!email || !senha) {
     return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
   }
 
-  const usuario = db.prepare('SELECT * FROM Usuario WHERE email = ?').get(email);
+  const { rows } = await query('SELECT * FROM usuario WHERE email = $1', [email]);
+  const usuario = rows[0];
   if (!usuario || !bcrypt.compareSync(String(senha), usuario.senha)) {
     return res.status(401).json({ error: 'Credenciais inválidas.' });
   }
@@ -51,11 +53,9 @@ exports.login = (req, res) => {
   return res.json({ token: gerarToken(dados), usuario: dados });
 };
 
-// GET /api/auth/me  (rota protegida)
-exports.me = (req, res) => {
-  const usuario = db
-    .prepare('SELECT id, nome, email FROM Usuario WHERE id = ?')
-    .get(req.userId);
-  if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
-  return res.json(usuario);
+// GET /api/auth/me
+exports.me = async (req, res) => {
+  const { rows } = await query('SELECT id, nome, email FROM usuario WHERE id = $1', [req.userId]);
+  if (!rows.length) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  return res.json(rows[0]);
 };

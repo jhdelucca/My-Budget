@@ -1,4 +1,4 @@
-const db = require('../db/database');
+const { query } = require('../db/database');
 
 function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -6,13 +6,10 @@ function round2(n) {
 
 /**
  * GET /api/dashboard?mes=06&ano=2026
- *
- * Retorna os dados consolidados:
- *  - orcamentos: gasto vs limite, com indicativos de saldo diário e semanal;
- *  - resumo: totais do período;
- *  - centrosCusto: disponível em conta (débito) e limite vs gasto (crédito).
+ * Retorna dados consolidados: orçamentos (gasto vs limite + saldo diário/semanal),
+ * resumo do período e centros de custo (débito/crédito).
  */
-exports.getDashboard = (req, res) => {
+exports.getDashboard = async (req, res) => {
   const hoje = new Date();
   const mes = String(req.query.mes || hoje.getMonth() + 1).padStart(2, '0');
   const ano = String(req.query.ano || hoje.getFullYear());
@@ -20,32 +17,33 @@ exports.getDashboard = (req, res) => {
   const mesNum = parseInt(mes, 10);
   const anoNum = parseInt(ano, 10);
 
-  // Quantos dias tem o mês selecionado (dia 0 do mês seguinte = último dia do mês atual).
+  // Último dia do mês selecionado.
   const diasNoMes = new Date(anoNum, mesNum, 0).getDate();
 
-  // Se o período selecionado é o mês corrente, os "dias restantes" partem de hoje.
-  const ehMesCorrente =
-    mesNum === hoje.getMonth() + 1 && anoNum === hoje.getFullYear();
+  const ehMesCorrente = mesNum === hoje.getMonth() + 1 && anoNum === hoje.getFullYear();
   const diaAtual = ehMesCorrente ? hoje.getDate() : 1;
   const diasRestantes = ehMesCorrente ? diasNoMes - diaAtual + 1 : diasNoMes;
 
   // -------- Orçamentos do período --------
-  const orcamentos = db
-    .prepare(
-      `SELECT o.id, o.nome_categoria, o.limite_mensal, o.mes, o.ano,
-              COALESCE((SELECT SUM(g.valor) FROM Gasto g WHERE g.orcamento_id = o.id), 0) AS total_gasto
-       FROM Orcamento o
-       WHERE o.usuario_id = ? AND o.mes = ? AND o.ano = ?
-       ORDER BY o.nome_categoria`
-    )
-    .all(req.userId, mes, ano);
+  const orcRes = await query(
+    `SELECT o.id, o.nome_categoria, o.limite_mensal, o.mes, o.ano,
+            COALESCE((SELECT SUM(g.valor) FROM gasto g WHERE g.orcamento_id = o.id), 0) AS total_gasto
+     FROM orcamento o
+     WHERE o.usuario_id = $1 AND o.mes = $2 AND o.ano = $3
+     ORDER BY o.nome_categoria`,
+    [req.userId, mes, ano]
+  );
+  const orcamentos = orcRes.rows.map((r) => ({
+    ...r,
+    limite_mensal: Number(r.limite_mensal),
+    total_gasto: Number(r.total_gasto),
+  }));
 
   const orcamentosCalculados = orcamentos.map((o) => {
     const saldoRestante = o.limite_mensal - o.total_gasto;
     const saldoDiario = diasRestantes > 0 ? saldoRestante / diasRestantes : 0;
     const saldoSemanal = saldoDiario * Math.min(7, diasRestantes);
-    const percentualUsado =
-      o.limite_mensal > 0 ? (o.total_gasto / o.limite_mensal) * 100 : 0;
+    const percentualUsado = o.limite_mensal > 0 ? (o.total_gasto / o.limite_mensal) * 100 : 0;
 
     return {
       id: o.id,
@@ -57,7 +55,6 @@ exports.getDashboard = (req, res) => {
       saldo_restante: round2(saldoRestante),
       percentual_usado: round2(percentualUsado),
       estourou: o.total_gasto > o.limite_mensal,
-      // Quanto ainda dá para gastar por dia / por semana sem estourar o limite.
       saldo_diario_sugerido: round2(Math.max(saldoDiario, 0)),
       saldo_semanal_sugerido: round2(Math.max(saldoSemanal, 0)),
     };
@@ -84,40 +81,44 @@ exports.getDashboard = (req, res) => {
   };
 
   // -------- Centros de custo --------
-  // Gasto considerado por centro = gastos lançados dentro do mês/ano selecionado.
-  const centros = db.prepare('SELECT * FROM CentroCusto WHERE usuario_id = ?').all(req.userId);
-  const gastoPorCentroStmt = db.prepare(
-    `SELECT COALESCE(SUM(valor), 0) AS gasto
-     FROM Gasto
-     WHERE centro_custo_id = ?
-       AND strftime('%m', data) = ?
-       AND strftime('%Y', data) = ?`
-  );
+  const centrosRes = await query('SELECT * FROM centrocusto WHERE usuario_id = $1', [req.userId]);
 
-  const centrosCusto = centros.map((c) => {
-    const { gasto } = gastoPorCentroStmt.get(c.id, mes, ano);
-    if (c.tipo === 'Crédito') {
+  const centrosCusto = await Promise.all(
+    centrosRes.rows.map(async (c) => {
+      const g = await query(
+        `SELECT COALESCE(SUM(valor), 0) AS gasto
+         FROM gasto
+         WHERE centro_custo_id = $1
+           AND to_char(data, 'MM') = $2
+           AND to_char(data, 'YYYY') = $3`,
+        [c.id, mes, ano]
+      );
+      const gasto = Number(g.rows[0].gasto);
+      const limite = Number(c.limite);
+      const saldo = Number(c.saldo_disponivel);
+
+      if (c.tipo === 'Crédito') {
+        return {
+          id: c.id,
+          nome: c.nome,
+          tipo: c.tipo,
+          limite: round2(limite),
+          gasto: round2(gasto),
+          disponivel: round2(limite - gasto),
+          percentual_usado: limite > 0 ? round2((gasto / limite) * 100) : 0,
+          estourou: gasto > limite,
+        };
+      }
       return {
         id: c.id,
         nome: c.nome,
         tipo: c.tipo,
-        limite: round2(c.limite),
+        saldo_disponivel: round2(saldo),
         gasto: round2(gasto),
-        disponivel: round2(c.limite - gasto),
-        percentual_usado: c.limite > 0 ? round2((gasto / c.limite) * 100) : 0,
-        estourou: gasto > c.limite,
+        disponivel: round2(saldo - gasto),
       };
-    }
-    // Débito (conta corrente): saldo disponível menos o que já foi gasto.
-    return {
-      id: c.id,
-      nome: c.nome,
-      tipo: c.tipo,
-      saldo_disponivel: round2(c.saldo_disponivel),
-      gasto: round2(gasto),
-      disponivel: round2(c.saldo_disponivel - gasto),
-    };
-  });
+    })
+  );
 
   res.json({ resumo, orcamentos: orcamentosCalculados, centrosCusto });
 };

@@ -1,0 +1,18 @@
+# Blueprint do Render para o backend (API) do My Budget.
+# No painel do Render: New > Blueprint > aponte para este repositório.
+services:
+  - type: web
+    name: my-budget-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      # Gerado automaticamente pelo Render.
+      - key: JWT_SECRET
+        generateValue: true
+      # Cole a connection string do Neon no painel (marcado como secreto).
+      - key: DATABASE_URL
+        sync: false

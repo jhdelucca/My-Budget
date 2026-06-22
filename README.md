@@ -4,17 +4,21 @@ Aplicação web para controle de gastos pessoais.
 
 - **Frontend:** React 18 + Vite + Tailwind CSS + React Router + Axios
 - **Backend:** Node.js + Express (API REST)
-- **Banco de dados:** SQLite embutido (via módulo nativo `node:sqlite` do Node 24 — **sem dependências nativas para compilar**)
+- **Banco de dados:** PostgreSQL (via driver `pg`) — recomendado [Neon](https://neon.tech) (grátis)
 - **Autenticação:** JWT + senha com hash (bcrypt)
 
 Tudo no mesmo repositório (monorepo: `backend/` + `frontend/`).
+
+Para colocar em produção (Neon + Render + Vercel), veja **[DEPLOY.md](DEPLOY.md)**.
 
 ---
 
 ## ✅ Pré-requisitos
 
-- **Node.js 22.5+** (recomendado **Node 24 LTS**, que já inclui o módulo `node:sqlite`).
-  Verifique com: `node --version`
+- **Node.js 18+** — verifique com `node --version`.
+- Uma **string de conexão PostgreSQL** (`DATABASE_URL`). A forma mais fácil:
+  crie um banco grátis no [Neon](https://neon.tech) e copie a connection string.
+  (Alternativa: um PostgreSQL local — nesse caso defina `PGSSL=disable` no `.env`.)
 
 ---
 
@@ -30,7 +34,13 @@ npm run install:all
 
 > Esse comando instala as dependências da raiz, do `backend` e do `frontend`.
 
-### 2. (Opcional) Popular o banco com dados de exemplo
+### 2. Configurar o banco de dados
+
+Copie `backend/.env.example` para `backend/.env` e preencha a `DATABASE_URL`
+com a string do Neon (ou do seu Postgres local). As tabelas são criadas
+automaticamente quando a API sobe.
+
+### 3. (Opcional) Popular o banco com dados de exemplo
 
 ```bash
 npm run seed
@@ -41,7 +51,7 @@ Cria um usuário de demonstração:
 - **E-mail:** `demo@mybudget.com`
 - **Senha:** `1234`
 
-### 3. Subir backend + frontend juntos
+### 4. Subir backend + frontend juntos
 
 ```bash
 npm run dev
@@ -66,15 +76,16 @@ npm run dev:frontend
 ```
 MyBudget/
 ├─ package.json              # scripts que orquestram backend + frontend
+├─ render.yaml               # blueprint de deploy do backend (Render)
 ├─ backend/
-│  ├─ .env                   # PORT e JWT_SECRET
-│  ├─ data/                  # arquivo mybudget.db é criado aqui
+│  ├─ .env                   # PORT, JWT_SECRET e DATABASE_URL
 │  └─ src/
-│     ├─ index.js            # servidor Express
+│     ├─ index.js            # servidor Express (conecta ao banco e sobe)
 │     ├─ db/
-│     │  ├─ database.js       # conexão SQLite + criação das tabelas
+│     │  ├─ database.js       # conexão PostgreSQL (pool) + criação das tabelas
 │     │  └─ seed.js           # dados de exemplo
 │     ├─ middleware/auth.js  # validação do JWT
+│     ├─ utils/asyncHandler.js # captura erros de handlers async
 │     ├─ controllers/        # regras de negócio (auth, orçamento, centro, gasto, dashboard)
 │     └─ routes/             # rotas REST de cada entidade
 └─ frontend/
@@ -133,6 +144,7 @@ Todas as rotas (exceto login/cadastro) exigem o header `Authorization: Bearer <t
 
 ## 📝 Notas
 
-- O `node:sqlite` é marcado como experimental no Node; por isso os scripts usam `--no-warnings` apenas para deixar o console limpo. É estável para esta aplicação.
-- Em produção, troque o `JWT_SECRET` em `backend/.env` por um valor longo e aleatório.
-- O arquivo do banco fica em `backend/data/mybudget.db`. Para "zerar" tudo, apague esse arquivo (e os `.db-shm`/`.db-wal`) e rode `npm run seed` novamente.
+- O banco é **PostgreSQL**. As tabelas são criadas automaticamente na inicialização (`initDb`).
+- Em produção, troque o `JWT_SECRET` por um valor longo e aleatório (no Render é gerado automaticamente).
+- Para colocar online de graça (Neon + Render + Vercel), siga o **[DEPLOY.md](DEPLOY.md)**.
+- Para "zerar" os dados, rode `npm run seed` (ele recria o usuário demo) ou apague as tabelas no painel do Neon.

@@ -1,7 +1,11 @@
 import axios from 'axios';
 
-// Em desenvolvimento, o Vite faz proxy de /api -> http://localhost:3001
-const api = axios.create({ baseURL: '/api' });
+// Em desenvolvimento (sem VITE_API_URL), usa /api e o Vite faz proxy p/ :3001.
+// Em produção (frontend separado, ex.: Vercel), defina VITE_API_URL com a URL
+// pública do backend, ex.: https://meu-backend.onrender.com/api
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+});
 
 // Injeta o token JWT (se houver) em toda requisição.
 api.interceptors.request.use((config) => {
