@@ -11,6 +11,7 @@ const orcamentoRoutes = require('./routes/orcamentoRoutes');
 const centroCustoRoutes = require('./routes/centroCustoRoutes');
 const gastoRoutes = require('./routes/gastoRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const assistenteRoutes = require('./routes/assistenteRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,6 +27,7 @@ app.use('/api/orcamentos', orcamentoRoutes);
 app.use('/api/centros-custo', centroCustoRoutes);
 app.use('/api/gastos', gastoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/assistente', assistenteRoutes);
 
 // 404 para rotas de API inexistentes.
 app.use('/api', (req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));

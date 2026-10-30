@@ -7,6 +7,7 @@ const links = [
   { to: '/orcamentos', label: 'Orçamentos' },
   { to: '/centros-custo', label: 'Centros de Custo' },
   { to: '/gastos', label: 'Gastos' },
+  { to: '/assistente', label: 'Assistente' },
 ];
 
 export default function Layout() {

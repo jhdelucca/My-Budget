@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Orcamentos from './pages/Orcamentos';
 import CentrosCusto from './pages/CentrosCusto';
 import Gastos from './pages/Gastos';
+import Assistente from './pages/Assistente';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/orcamentos" element={<Orcamentos />} />
         <Route path="/centros-custo" element={<CentrosCusto />} />
         <Route path="/gastos" element={<Gastos />} />
+        <Route path="/assistente" element={<Assistente />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
